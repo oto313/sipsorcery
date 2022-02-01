@@ -26,6 +26,7 @@ using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using SIPSorcery.net.RTP;
 using SIPSorcery.SIP.App;
 using SIPSorcery.Sys;
 using SIPSorceryMedia.Abstractions;
@@ -690,7 +691,7 @@ namespace SIPSorcery.Net
                 foreach (var announcement in sessionDescription.Media.Where(x => x.Media == SDPMediaTypesEnum.audio || x.Media == SDPMediaTypesEnum.video))
                 {
                     MediaStreamStatusEnum mediaStreamStatus = announcement.MediaStreamStatus.HasValue ? announcement.MediaStreamStatus.Value : MediaStreamStatusEnum.SendRecv;
-                    var remoteTrack = new MediaStreamTrack(announcement.Media, true, announcement.MediaFormats.Values.ToList(), mediaStreamStatus, announcement.SsrcAttributes);
+                    var remoteTrack = new MediaStreamTrack(announcement.Media, true, announcement.MediaFormats.Values.ToList(), mediaStreamStatus, announcement.SsrcAttributes, announcement.HeaderExtensions);
                     addTrack(remoteTrack);
 
                     if (UseSdpCryptoNegotiation)
@@ -2378,6 +2379,15 @@ namespace SIPSorcery.Net
                                         }
 
                                         VideoRemoteTrack.LastRemoteSeqNum = hdr.SequenceNumber;
+                                        hdr.GetHeaderExtensions().ToList().ForEach(x =>
+                                        {
+                                            var ntpTimestamp = x.GetNtpTimestamp(VideoRemoteTrack.HeaderExtensions);
+                                            if (ntpTimestamp.HasValue)
+                                            {
+                                                VideoRemoteTrack.LastAbsoluteCaptureTimestamp = new TimestampPair() { NtpTimestamp = ntpTimestamp.Value, RtpTimestamp = hdr.Timestamp };
+                                            }
+
+                                        });
                                     }
 
                                     if (OnVideoFrameReceived != null)
@@ -2430,6 +2440,14 @@ namespace SIPSorcery.Net
                                 }
                                 else if (avFormat.Value.Kind == SDPMediaTypesEnum.audio && AudioRemoteTrack != null)
                                 {
+                                    hdr.GetHeaderExtensions().ToList().ForEach(x =>
+                                    {
+                                        var ntpTimestamp = x.GetNtpTimestamp(AudioRemoteTrack.HeaderExtensions);
+                                        if (ntpTimestamp.HasValue) {
+                                            AudioRemoteTrack.LastAbsoluteCaptureTimestamp = new TimestampPair() { NtpTimestamp = ntpTimestamp.Value, RtpTimestamp = hdr.Timestamp };
+                                        }
+                                        
+                                    });
                                     if (IsSecure || UseSdpCryptoNegotiation)
                                     {
                                         var (succeeded, newBuffer) = UnprotectBuffer(SDPMediaTypesEnum.audio, buffer);
